@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>공저자 네트워크</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- D3.js CDN -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f7f9fc; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+        .svg-container { 
+            width: 100%; 
+            height: 800px; 
+            min-height: 500px; /* 최소 높이 지정 */
+            border: 1px solid #e2e8f0; 
+            border-radius: 12px; 
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); 
+            background-color: #ffffff; 
+        }
+        .links line { stroke: #999; stroke-opacity: 0.6; }
+        .nodes circle { stroke: #fff; stroke-width: 1.5px; cursor: pointer; }
+        .nodes text { pointer-events: none; font-size: 10px; font-weight: bold; text-shadow: 0 1px 0 #fff, 1px 0 0 #fff, 0 -1px 0 #fff, -1px 0 0 #fff; }
+        .nodes circle.main-author { fill: #3b82f6; }
+        .nodes text.main-author { fill: #1e40af; }
+        .node-label { font-size: 14px; font-weight: bold; }
+        .node-label.main-author { font-size: 16px; color: #1e40af; }
+
+        #tooltip {
+            position: absolute;
+            background-color: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+            max-width: 300px;
+            text-align: left;
+            z-index: 1000;
+        }
+        #tooltip h4 { font-weight: bold; margin-bottom: 5px; color: #3b82f6; }
+        #tooltip p { font-size: 12px; margin: 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-3xl font-bold mb-4 text-center text-gray-800">
+            학술지 공저자 네트워크 시각화
+        </h1>
+        <p class="text-center text-gray-600 mb-8">
+            저자 간의 공동 연구 관계를 시각적으로 확인해 보세요.
+            <br>
+            노드를 드래그하여 위치를 조정할 수 있습니다.
+        </p>
+        <div id="graph-container" class="svg-container">
+            <svg id="graph-svg" width="100%" height="100%"></svg>
+        </div>
+        <div id="tooltip"></div>
+    </div>
+
+    <script>
+        window.onload = function() {
+            // 저자 이름 매핑 (영문 -> 한글)
+            const authorMappings = {
+                'Han, Y.': '한옥결', 'Hong, S.': '홍수민', 'Lim, C.': '임철일', 'Lee, U.': '이웅기',
+                'Kim, Y.': '김예지', 'Lee, S.': '이성재', 'Hwang, Y.': '황윤정', 'Li, Z.': 'Li, Z.',
+                'Lee, J.': '이진연', 'Lee, E.': '이은서', 'Kim, J.': '김민지', 'Kim, H.': '김한휘',
+                'Jeong, Y.': '정예일', 'Koh, J.': '고준보', 'Byun, G.': '변광필', 'Lee, Y.': '이영선',
+                'Rho, J.': 'Rho, J.', 'An, S.': 'An, S.', 'Seo, D. G.': 'Seo, D. G.', 'Ihm, J.': 'Ihm, J.',
+                'et al.': '외', 'Go, B.': '고보경', 'Han, A.': '한송이', 'Han, H.': '한형종', 'Yun, Y.': '윤영호',
+                'Kim, Y. T.': '김영태', 'Shin, K. H.': '신경희', 'Kim, Y. W.': '김영우', 'Park, K. J.': '박광진',
+                'Jeong, S. Y.': '정소연', 'Ryu, K, W.': '류관우', 'Han, W. S.': '한원식', 'Jung, K. H.': '정광희',
+            };
+            
+            // 모든 논문의 저자 목록과 제목
+            const paperData = [
+                { title: "교사 연수 프로그램 개발을 위한 RPISD 모형 적용 및 개선 탐색 연구", authors: ["정경욱", "정재현", "강민주", "신선영", "임철일"] },
+                { title: "머신러닝 이해 및 활용을 위한 초등 AI 융합 수업 모형 및 설계원리 개발", authors: ["이현웅", "김승하", "곽헌동", "임철일"] },
+                { title: "인공지능․디지털 도구를 활용한 중등 영어 글쓰기 교육에서 교수자-학습자-인공지능 협업 수업 설계 전략 개발", authors: ["임철일", "박성경", "엄태연", "홍수민"] },
+                { title: "행동기준 평정척도(BARS)를 활용한 현직 교원의 AI․디지털 역량 측정 도구 개발 및 타당화", authors: ["임철일", "한옥결", "김승하", "이채린", "홍수민", "정재현"] },
+                { title: "데이터 기반 맞춤형 수업을 위한 수학과 대시보드 설계", authors: ["임은선", "왕효원", "박주현", "고준보", "임철일", "유연주"] },
+                { title: "수업 지도안 분석을 통한 교사의 AI 융합 수업 설계 역량 탐색", authors: ["임은선", "이진연", "임철일", "채지윤"] },
+                { title: "초· 중등 교사의 인공지능 융합 수업 설계 지원 시스템 개발 원리", authors: ["이다연", "임철일"] },
+                { title: "인공지능 융합 교육 연구 동향과 발전 방향", authors: ["임철일", "한옥결", "채지윤", "홍수민", "고보경", "임은선"] },
+                { title: "사회과 예비 교원의 디지털 역량 향상을 위한 프로그래밍 기반 교육프로그램 개발", authors: ["이상일", "고보경", "고준보", "김세창", "김우형", "임철일"] },
+                { title: "AI 융합 교육에 대한 초등교사의 인식 및 교육 요구도 분석", authors: ["임은선", "홍수민", "임철일"] },
+                { title: "Defining and Classifying the Roles of Intelligent Learning Companion Systems: A Scoping Review of the Literature.", authors: ["Han, Y.", "Hong, S.", "Li, Z.", "et al.", "Lim, C."] },
+                { title: "Can we Use GPT-4 as a Mathematics Evaluator in Education?", authors: ["Lee, U.", "Kim, Y.", "Lee, S.", "et al.", "Lim, C."] },
+                { title: "가상세계 초․중등학교 도서관 학습환경 모형 개발 연구", authors: ["임철일", "박성경", "엄태연", "임민희", "홍수민"] },
+                { title: "초등학교에서의 게임 기반 인공지능 융합 수업 모형 개발 연구", authors: ["정수진", "임철일"] },
+                { title: "Development of instructional design principles for using ICT in resource-limited learning environments", authors: ["Hwang, Y.", "Lim, C."] },
+                { title: "Implication of a Case Study using Generative AI in Elementary School", authors: ["Lee, U.", "Han, A.", "Lee, J.", "Lee, E.", "Kim, J.", "Kim, H.", "Lim, C."] },
+                { title: "I see you: teacher analytics with GPT-4 vision-powered observational assessment", authors: ["Lee, U.", "Jeong, Y.", "Koh, J.", "Byun, G.", "Lee, Y.", "Lee, H.", "et al.", "Kim, H.", "Lim, C."] },
+                { title: "인공지능 활용 교육을 위한 교사의 교수설계 모형 실천에 대한 인식", authors: ["임철일", "채지윤", "김가형", "이다연"] },
+                { title: "체계적 문헌 고찰을 통한 국내 AI 활용 수업 연구 현황 및 주요 수업 설계 단계 탐색", authors: ["박성경", "홍수민", "임은선", "임철일"] },
+                { title: "교사의 교수설계 지원을 위한 AI 코스웨어 대시보드 프로토타입 개발 연구", authors: ["임철일", "임은선", "엄태연", "이은서", "정예일", "임민희"] },
+                { title: "초․중등학교의 교육용 메타버스 구축 및 운영을 위한 프레임워크 개발", authors: ["임철일", "한형종", "임은선", "고보경", "엄태연", "김승하", "홍수민"] },
+                { title: "국가 교육 사업의 협력적 거버넌스 실천 사례 분석", authors: ["임철일", "박철규", "황윤정"] },
+                { title: "Can ChatGPT be a debate partner? Developing ChatGPT-based application \"DEBO\"", authors: ["Lee, U.", "Jeong, Y.", "Koh, J.", "Byun, G.", "Lee, Y.", "Hwang, Y.", "Kim, H.", "Lim, C."] },
+                { title: "생성형 인공지능 챗봇을 활용한 수학과 인공지능 융합 수업 모형 개발", authors: ["고보경", "임철일", "신병철"] },
+                { title: "예비교원의 AI⋅디지털 활용 수업설계 역량강화를 위한 교육 프로그램 개발 연구", authors: ["임철일", "지현경", "고보경", "임은선", "민시은"] },
+                { title: "데이터 리터러시 향상을 위한 교과 간 AI 융합 수업 설계 모형 개발", authors: ["임은선", "임민희", "전민선", "임철일"] },
+                { title: "예비 교원을 위한 메타버스 콘텐츠 제작 역량강화 교육프로그램 개발 및 운영", authors: ["이다연", "이진연", "박동열", "임철일", "엄태연"] },
+                { title: "교수설계를 위한 생성형 AI 기반 챗봇의 활용 방안 탐색", authors: ["임철일", "고보경", "정예일", "이은서", "전민선", "김승하"] },
+                { title: "대학교육에서 하이브리드 학습 운영을 위한 개념 모형 및 교수설계전략 개발 연구", authors: ["임철일", "홍수민", "임은선", "박성경", "김한휘", "한형종"] },
+                { title: "초ㆍ중등교육에서 메타버스의 교육적 활용을 위한 교수학습방법에 따른 유형화 및 전략 개발 연구", authors: ["임철일", "한송이", "계보경", "이다연", "박주현", "엄태연", "최재훈", "전민선", "김은지", "권미영", "홍수민"] },
+                { title: "영어과 예비 교원의 인공지능 융합교육역량 향상을 위한 교육프로그램 개발", authors: ["고보경", "황윤정", "정예일", "최서용", "김기택", "임철일"] },
+                { title: "인공지능 튜터링 시스템 기반 초등학교 수학 수업 설계원리 및 지침 개발", authors: ["최서연", "임철일"] },
+                { title: "클라우드 기반 1인 1디바이스의 교육적 활용 효과", authors: ["임철일", "한옥결", "채지윤", "엄태연", "박성경"] },
+                { title: "교육 프로그램 개발을 위한 래피드 프로토타입(RPISD) 모형 개선 연구", authors: ["임은선", "홍수민", "박성경", "임철일"] },
+                { title: "RPISD 모형을 적용한 연구성과 및 학술정보 분석과 큐레이션 사서교육 프로그램 개발", authors: ["김민지", "곽헌동", "임철일"] },
+                { title: "예비교원의 원격교육역량 향상을 위한 교원양성대학의 교과목 개선 사례 연구", authors: ["임철일", "고보경", "김한휘", "유재혁"] },
+                { title: "Prompt Aloud!: Incorporating image-generative AI into STEAM class", authors: ["Lee, U.", "Han, A.", "Lee, J.", "Lee, E.", "Kim, J.", "Kim, H.", "Lim, C."] },
+                { title: "교원 양성기관의 에듀테크 활용 실태 분석 및 에듀테크 분류 체계", authors: ["임철일", "한옥결", "채지윤", "이진연", "이다연"] },
+                { title: "공학교육에서 학습자 질문 촉진을 위한 온라인 소통 창구의 활용과 효과에 관한 연구", authors: ["홍수민", "유재혁", "김한휘", "임영섭", "임철일"] },
+                { title: "블록 코딩을 활용한 융합형 국어 수업 설계원리 및 모형 개발", authors: ["임철일", "이다연", "정혜진", "이은서"] },
+                { title: "예비 중등교원의 인공지능 역량 향상을 위한 교육과정 체계 개발 방향 탐색", authors: ["임철일", "한형종", "채지윤", "이진연", "정예일", "박성경", "이은서", "송길태"] },
+                { title: "영어 쓰기에서 자동 쓰기 평가 시스템(AWE)의 효과적 활용을 위한 교수전략 개발 연구", authors: ["이진연", "임은선", "임철일"] },
+                { title: "국내 교수설계 관련 연구동향 분석", authors: ["고보경", "임철일", "정예일", "엄태연"] },
+                { title: "기업교육 프로그램 개발을 위한 래피드 프로토타입 교수체제설계(RPISD) 모형 적용 및 개선", authors: ["정예일", "엄태연", "민시은", "김은아", "임철일"] },
+                { title: "Effects of a blended design of closed-book and open-book examinations on dental students’ anxiety and performance.", authors: ["홍수민", "고보경", "임철일"] },
+                { title: "의과대학 환자안전교육을 위한 사례기반 학습모형 개발", authors: ["고보경", "임철일"] },
+                { title: "창의적 아이디어 도출을 위한 스캠퍼 (SCAMPER) 기법 지원 챗봇 프로토타입 개발", authors: ["이다연", "임철일"] },
+                { title: "초등학생을 위한 데이터 과학 교육 프로그램 개발 및 적용", authors: ["임철일", "이종찬", "송유경", "이웅기", "이홍규", "임은선"] },
+                { title: "창의적 문제해결을 위한 교과-소프트웨어융합 수업설계 원리 개발 연구", authors: ["지현경", "임철일"] },
+                { title: "비대면 공학교육에서 공개 및 실명 여부에 따른 학습자 질문 방식의 전략과 효과에 관한 연구", authors: ["홍수민", "김한휘", "임철일", "임영섭"] },
+                { title: "데이터 리터러시 향상을 위한 데이터 기반 토론 수업 모형 및 교수전략 개발 연구", authors: ["송유경", "송석리", "김예지", "임철일"] },
+                { title: "창의적 문제해결(CPS)의 문제 이해 단계를 위한 중등학생용 온라인 지원 도구 개발", authors: ["이다연", "임철일"] },
+                { title: "디자인 킹 기반 인공지능 서비스 기획 교육 프로그램 개발 연구", authors: ["송유경", "임철일"] },
+                { title: "대학에서의 실시간 비대면 수업 유형별 수업설계 전략에 관한 사례연구", authors: ["임철일", "김민지", "박주현", "배유진", "염지윤"] },
+                { title: "인공지능 챗봇의 교육적 활용 연구 동향 분석", authors: ["김민지", "염지윤", "정혜원", "임철일"] },
+                { title: "디지털 콘텐츠 저작 도구 Namo Author를 활용한 교육 프로그램 설계 과정과 효과에 관한 연구", authors: ["임철일", "염지윤", "이종찬", "정혜원", "최서연", "이웅기"] },
+                { title: "예비교사의 원격수업 교육실습 경험에 대한 탐색", authors: ["이성재", "최서연", "정혜원", "임철일", "전상학"] },
+                { title: "인공지능 스피커를 활용한 언어교육에서 교수자의 스캐폴딩 전략 개발", authors: ["홍수민", "임철일"] },
+                { title: "창의적 문제해결을 위한 대학 학습자 역량 모델 탐색과 요구도 분석", authors: ["임철일", "한형종"] },
+                { title: "예비교사를 위한 소프트웨어-교과융합 교육 프로그램 개발 연구", authors: ["임철일", "지현경", "박주현", "이웅기", "배유진"] },
+                { title: "비판적 사고 촉진을 위한 세계시민교육 수업 모형 연구", authors: ["김가형", "황윤정", "임철일"] },
+                { title: "교수체제설계를 위한 래피드 프로토타입(RPISD) 모형 적용 및 개선에 관한 연구", authors: ["임철일", "송유경", "홍수민", "박찬실"] },
+                { title: "기업 교육에 있어서 창의적 사고 역량 향상을 위한 설계원리 개발", authors: ["임철일", "한형종", "홍수민", "송유경", "이다연"] },
+                { title: "Development of instructional design strategies for integrating an online support system for creative problem solving into a University course", authors: ["Lim, C.", "Han, H."] },
+                { title: "가상현실 기반 교육용 시뮬레이션 설계원리 개발", authors: ["한형종", "임철일"] },
+                { title: "Efficacy of health coaching and a Web‐based program on physical activity", authors: ["윤영호", "임철일", "이은서", "김영태", "신경희", "김영우", "박광진", "정소연", "류관우", "한원식", "정광희"] },
+                { title: "딥러닝 (Deep learning) 기반 미술 학습 지원도구 개발", authors: ["이웅기", "강상희", "이종찬", "최서연", "최욱명", "임철일"] }
+            ];
+
+            // 데이터 가공: 노드와 링크 생성
+            let nodes = {};
+            let links = [];
+
+            paperData.forEach(paper => {
+                const authors = paper.authors.map(author => {
+                    const mappedName = authorMappings[author] || author;
+                    nodes[mappedName] = { id: mappedName };
+                    return mappedName;
+                }).filter(name => name !== '외'); // '외' 저자는 노드에서 제외
+
+                if (authors.length > 1) {
+                    for (let i = 0; i < authors.length; i++) {
+                        for (let j = i + 1; j < authors.length; j++) {
+                            const source = authors[i];
+                            const target = authors[j];
+                            const existingLink = links.find(l =>
+                                (l.source === source && l.target === target) ||
+                                (l.source === target && l.target === source)
+                            );
+                            
+                            if (existingLink) {
+                                existingLink.papers.push(paper.title);
+                            } else {
+                                links.push({
+                                    source: source,
+                                    target: target,
+                                    papers: [paper.title]
+                                });
+                            }
+                        }
+                    }
+                }
+            });
+
+            const nodeData = Object.values(nodes);
+
+            // SVG 컨테이너 설정
+            const svg = d3.select("#graph-svg");
+            const container = d3.select("#graph-container");
+            const width = container.node().getBoundingClientRect().width;
+            const height = container.node().getBoundingClientRect().height;
+
+            svg.attr("viewBox", [0, 0, width, height]);
+
+            // 힘 기반 시뮬레이션 설정
+            const simulation = d3.forceSimulation(nodeData)
+                .force("link", d3.forceLink(links).id(d => d.id).distance(100))
+                .force("charge", d3.forceManyBody().strength(-200))
+                .force("center", d3.forceCenter(width / 2, height / 2))
+                .force("collide", d3.forceCollide().radius(20).strength(0.8));
+
+            // 링크(선) 생성
+            const link = svg.append("g")
+                .attr("class", "links")
+                .attr("stroke", "#999")
+                .attr("stroke-opacity", 0.6)
+                .selectAll("line")
+                .data(links)
+                .join("line");
+
+            // 노드(원) 및 텍스트 그룹 생성
+            const node = svg.append("g")
+                .attr("class", "nodes")
+                .selectAll("g")
+                .data(nodeData)
+                .join("g");
+
+            // 노드 원 그리기
+            node.append("circle")
+                .attr("r", d => d.id === "임철일" ? 12 : 8)
+                .attr("fill", d => d.id === "임철일" ? "#3b82f6" : "#6b7280");
+
+            // 노드 텍스트 레이블 추가
+            node.append("text")
+                .attr("class", "node-label")
+                .attr("x", 15)
+                .attr("y", 5)
+                .text(d => d.id)
+                .attr("class", d => d.id === "임철일" ? "node-label main-author" : "node-label")
+                .attr("font-size", d => d.id === "임철일" ? "14px" : "12px");
+
+            // 툴팁 설정
+            const tooltip = d3.select("#tooltip");
+
+            // 마우스 이벤트 핸들러
+            node.on("mouseover", function(event, d) {
+                // 노드 및 연결된 링크 강조
+                link.style("stroke-opacity", linkd => 
+                    linkd.source.id === d.id || linkd.target.id === d.id ? 1 : 0.2
+                );
+                link.style("stroke", linkd =>
+                    linkd.source.id === d.id || linkd.target.id === d.id ? "#3b82f6" : "#999"
+                );
+                
+                node.selectAll("circle").style("opacity", noded => 
+                    d.id === noded.id || links.some(l => 
+                        (l.source.id === d.id && l.target.id === noded.id) || 
+                        (l.source.id === noded.id && l.target.id === d.id)
+                    ) ? 1 : 0.5
+                );
+                node.selectAll("text").style("opacity", noded => 
+                    d.id === noded.id || links.some(l => 
+                        (l.source.id === d.id && l.target.id === noded.id) || 
+                        (l.source.id === noded.id && l.target.id === d.id)
+                    ) ? 1 : 0.5
+                );
+
+                // 툴팁 내용 및 위치 설정
+                const linkedPapers = links.filter(l => l.source.id === d.id || l.target.id === d.id)
+                    .flatMap(l => l.papers)
+                    .filter((value, index, self) => self.indexOf(value) === index);
+                
+                let tooltipHtml = `<h4>${d.id} 님과 공동 연구한 논문</h4>`;
+                if (linkedPapers.length > 0) {
+                    tooltipHtml += linkedPapers.map(title => `<p>• ${title}</p>`).join("");
+                } else {
+                    tooltipHtml += "<p>공동 연구 논문 정보가 없습니다.</p>";
+                }
+                
+                tooltip.html(tooltipHtml)
+                    .style("left", (event.pageX + 15) + "px")
+                    .style("top", (event.pageY - 15) + "px")
+                    .style("opacity", 1);
+            })
+            .on("mouseout", function() {
+                // 강조 해제
+                link.style("stroke-opacity", 0.6).style("stroke", "#999");
+                node.selectAll("circle, text").style("opacity", 1);
+                tooltip.style("opacity", 0);
+            });
+
+            // 드래그 기능 추가
+            function dragstarted(event, d) {
+                if (!event.active) simulation.alphaTarget(0.3).restart();
+                d.fx = d.x;
+                d.fy = d.y;
+            }
+
+            function dragged(event, d) {
+                d.fx = event.x;
+                d.fy = event.y;
+            }
+
+            function dragended(event, d) {
+                if (!event.active) simulation.alphaTarget(0);
+                d.fx = null;
+                d.fy = null;
+            }
+
+            const drag = d3.drag()
+                .on("start", dragstarted)
+                .on("drag", dragged)
+                .on("end", dragended);
+
+            node.call(drag);
+
+            // 시뮬레이션 틱 이벤트 핸들러
+            simulation.on("tick", () => {
+                link
+                    .attr("x1", d => d.source.x)
+                    .attr("y1", d => d.source.y)
+                    .attr("x2", d => d.target.x)
+                    .attr("y2", d => d.target.y);
+                
+                node.attr("transform", d => `translate(${d.x}, ${d.y})`);
+            });
+
+            // 화면 크기 변경 시 시뮬레이션 업데이트
+            window.addEventListener('resize', () => {
+                const newWidth = container.node().getBoundingClientRect().width;
+                const newHeight = container.node().getBoundingClientRect().height;
+                svg.attr("viewBox", [0, 0, newWidth, newHeight]);
+                simulation.force("center", d3.forceCenter(newWidth / 2, newHeight / 2));
+                simulation.alpha(1).restart();
+            });
+        };
+    </script>
+</body>
+</html>
