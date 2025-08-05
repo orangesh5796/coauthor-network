@@ -14,7 +14,7 @@
         .svg-container { 
             width: 100%; 
             height: 800px; 
-            min-height: 500px; /* 최소 높이 지정 */
+            min-height: 500px;
             border: 1px solid #e2e8f0; 
             border-radius: 12px; 
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); 
@@ -23,7 +23,7 @@
         .links line { stroke: #999; stroke-opacity: 0.6; }
         .nodes circle { stroke: #fff; stroke-width: 1.5px; cursor: pointer; }
         .nodes text { pointer-events: none; font-size: 10px; font-weight: bold; text-shadow: 0 1px 0 #fff, 1px 0 0 #fff, 0 -1px 0 #fff, -1px 0 0 #fff; }
-        .nodes circle.main-author { fill: #3b82f6; }
+        .nodes circle.main-author { stroke: #3b82f6; stroke-width: 2.5px; }
         .nodes text.main-author { fill: #1e40af; }
         .node-label { font-size: 14px; font-weight: bold; }
         .node-label.main-author { font-size: 16px; color: #1e40af; }
@@ -44,6 +44,8 @@
         }
         #tooltip h4 { font-weight: bold; margin-bottom: 5px; color: #3b82f6; }
         #tooltip p { font-size: 12px; margin: 0; }
+        .legend-item { display: flex; align-items: center; margin-right: 1.5rem; }
+        .legend-color-box { width: 16px; height: 16px; border-radius: 4px; margin-right: 0.5rem; }
     </style>
 </head>
 <body>
@@ -51,11 +53,48 @@
         <h1 class="text-3xl font-bold mb-4 text-center text-gray-800">
             학술지 공저자 네트워크 시각화
         </h1>
-        <p class="text-center text-gray-600 mb-8">
-            저자 간의 공동 연구 관계를 시각적으로 확인해 보세요.
+        <p class="text-center text-gray-600 mb-4">
+            저자 간의 공동 연구 관계를 시각적으로 확인해 보세요. 노드는 주제별로 색상이 구분됩니다.
             <br>
             노드를 드래그하여 위치를 조정할 수 있습니다.
         </p>
+
+        <!-- 범례 (Legend) -->
+        <div class="flex justify-center flex-wrap gap-4 mb-8 text-sm">
+            <div class="legend-item">
+                <div class="legend-color-box" style="background-color: #ef4444;"></div>
+                <span>AI 융합</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color-box" style="background-color: #f97316;"></div>
+                <span>AI 활용</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color-box" style="background-color: #eab308;"></div>
+                <span>디지털</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color-box" style="background-color: #10b981;"></div>
+                <span>교수설계/RPISD</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color-box" style="background-color: #3b82f6;"></div>
+                <span>메타버스/VR</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color-box" style="background-color: #8b5cf6;"></div>
+                <span>교사 역량</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color-box" style="background-color: #1a1a1a;"></div>
+                <span>데이터 교육</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color-box" style="background-color: #6b7280;"></div>
+                <span>교육/기타</span>
+            </div>
+        </div>
+
         <div id="graph-container" class="svg-container">
             <svg id="graph-svg" width="100%" height="100%"></svg>
         </div>
@@ -76,8 +115,13 @@
                 'Jeong, S. Y.': '정소연', 'Ryu, K, W.': '류관우', 'Han, W. S.': '한원식', 'Jung, K. H.': '정광희',
             };
             
+            // 제외할 저자 목록
+            const authorsToRemove = ["정광희", "정소연", "김영우", "윤영호", "한원식", "신경희", "박광진", "류관우", "김영태"];
+            const authorMappingsToRemove = Object.keys(authorMappings).filter(key => authorsToRemove.includes(authorMappings[key]));
+            const finalAuthorsToRemove = [...authorsToRemove, ...authorMappingsToRemove];
+
             // 모든 논문의 저자 목록과 제목
-            const paperData = [
+            let paperData = [
                 { title: "교사 연수 프로그램 개발을 위한 RPISD 모형 적용 및 개선 탐색 연구", authors: ["정경욱", "정재현", "강민주", "신선영", "임철일"] },
                 { title: "머신러닝 이해 및 활용을 위한 초등 AI 융합 수업 모형 및 설계원리 개발", authors: ["이현웅", "김승하", "곽헌동", "임철일"] },
                 { title: "인공지능․디지털 도구를 활용한 중등 영어 글쓰기 교육에서 교수자-학습자-인공지능 협업 수업 설계 전략 개발", authors: ["임철일", "박성경", "엄태연", "홍수민"] },
@@ -146,17 +190,80 @@
                 { title: "Efficacy of health coaching and a Web‐based program on physical activity", authors: ["윤영호", "임철일", "이은서", "김영태", "신경희", "김영우", "박광진", "정소연", "류관우", "한원식", "정광희"] },
                 { title: "딥러닝 (Deep learning) 기반 미술 학습 지원도구 개발", authors: ["이웅기", "강상희", "이종찬", "최서연", "최욱명", "임철일"] }
             ];
+            
+            // 논문 주제 분류 및 색상 매핑
+            const themes = {
+                'AI 융합': '#ef4444',
+                'AI 활용': '#f97316',
+                '디지털': '#eab308',
+                '교수설계/RPISD': '#10b981',
+                '메타버스/VR': '#3b82f6',
+                '교사 역량': '#8b5cf6',
+                '데이터 교육': '#1a1a1a',
+                '교육/기타': '#6b7280'
+            };
+
+            function getPaperTheme(title) {
+                const foundThemes = [];
+                
+                // AI 융합
+                if (title.includes("융합")) foundThemes.push('AI 융합');
+                // AI 활용 (머신러닝, 챗봇 등)
+                if (title.includes("인공지능") || title.includes("AI") || title.includes("머신러닝") || title.includes("GPT") || title.includes("챗봇") || title.includes("생성형")) foundThemes.push('AI 활용');
+                // 디지털
+                if (title.includes("디지털") || title.includes("에듀테크") || title.includes("ICT") || title.includes("클라우드") || title.includes("Namo Author")) foundThemes.push('디지털');
+                // 교수설계/RPISD
+                if (title.includes("RPISD") || title.includes("교수설계") || title.includes("수업설계") || title.includes("교육 프로그램") || title.includes("설계원리") || title.includes("교수체제설계") || title.includes("개발원리") || title.includes("교육과정")) foundThemes.push('교수설계/RPISD');
+                // 메타버스/VR
+                if (title.includes("메타버스") || title.includes("가상세계") || title.includes("가상현실") || title.includes("VR")) foundThemes.push('메타버스/VR');
+                // 교사 역량
+                if (title.includes("교사") || title.includes("교원") || title.includes("역량") || title.includes("교육실습") || title.includes("AIEDAP")) foundThemes.push('교사 역량');
+                // 데이터 교육
+                if (title.includes("데이터") && (title.includes("리터러시") || title.includes("과학") || title.includes("분석"))) foundThemes.push('데이터 교육');
+                
+                // 중복 제거
+                const uniqueThemes = [...new Set(foundThemes)];
+                
+                // 우선순위에 따라 단일 주제 반환
+                if (uniqueThemes.length > 0) {
+                    const themePriority = ['AI 융합', 'AI 활용', '디지털', '교수설계/RPISD', '메타버스/VR', '교사 역량', '데이터 교육'];
+                    for (const theme of themePriority) {
+                        if (uniqueThemes.includes(theme)) {
+                            return theme;
+                        }
+                    }
+                }
+                
+                return '교육/기타';
+            }
 
             // 데이터 가공: 노드와 링크 생성
             let nodes = {};
             let links = [];
 
-            paperData.forEach(paper => {
+            const filteredPaperData = paperData.map(paper => ({
+                ...paper,
+                authors: paper.authors.filter(author => !finalAuthorsToRemove.includes(authorMappings[author] || author))
+            }));
+
+            // 노드에 주제 정보 추가
+            const authorThemesCount = {};
+            filteredPaperData.forEach(paper => {
+                const paperTheme = getPaperTheme(paper.title); // 논문당 하나의 주제만 할당
                 const authors = paper.authors.map(author => {
                     const mappedName = authorMappings[author] || author;
                     nodes[mappedName] = { id: mappedName };
+                    
+                    if (!authorThemesCount[mappedName]) {
+                        authorThemesCount[mappedName] = {};
+                        for (const theme in themes) {
+                            authorThemesCount[mappedName][theme] = 0;
+                        }
+                    }
+                    authorThemesCount[mappedName][paperTheme]++;
+
                     return mappedName;
-                }).filter(name => name !== '외'); // '외' 저자는 노드에서 제외
+                }).filter(name => name !== '외');
 
                 if (authors.length > 1) {
                     for (let i = 0; i < authors.length; i++) {
@@ -182,7 +289,31 @@
                 }
             });
 
-            const nodeData = Object.values(nodes);
+            const nodeData = Object.values(nodes).map(node => {
+                const counts = authorThemesCount[node.id];
+                let maxCount = 0;
+                let primaryTheme = '교육/기타';
+                const themesWithMaxCount = [];
+
+                for (const theme in counts) {
+                    if (counts[theme] > maxCount) {
+                        maxCount = counts[theme];
+                        primaryTheme = theme;
+                        themesWithMaxCount.length = 0;
+                        themesWithMaxCount.push(theme);
+                    } else if (counts[theme] === maxCount && maxCount > 0) {
+                        themesWithMaxCount.push(theme);
+                    }
+                }
+
+                node.theme = themesWithMaxCount.length > 1 ? '여러 주제' : primaryTheme;
+                node.color = themes[node.theme];
+                return node;
+            });
+            
+            // "여러 주제"가 없을 경우 범례에서 제거
+            const finalThemes = Object.keys(themes).filter(theme => theme !== '여러 주제');
+
 
             // SVG 컨테이너 설정
             const svg = d3.select("#graph-svg");
@@ -218,7 +349,8 @@
             // 노드 원 그리기
             node.append("circle")
                 .attr("r", d => d.id === "임철일" ? 12 : 8)
-                .attr("fill", d => d.id === "임철일" ? "#3b82f6" : "#6b7280");
+                .attr("fill", d => d.color)
+                .attr("class", d => d.id === "임철일" ? "main-author" : "");
 
             // 노드 텍스트 레이블 추가
             node.append("text")
@@ -260,7 +392,7 @@
                     .flatMap(l => l.papers)
                     .filter((value, index, self) => self.indexOf(value) === index);
                 
-                let tooltipHtml = `<h4>${d.id} 님과 공동 연구한 논문</h4>`;
+                let tooltipHtml = `<h4>${d.id} 님과 공동 연구한 논문 (주제: ${d.theme})</h4>`;
                 if (linkedPapers.length > 0) {
                     tooltipHtml += linkedPapers.map(title => `<p>• ${title}</p>`).join("");
                 } else {
